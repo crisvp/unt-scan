@@ -15,6 +15,7 @@ import apt_pkg
 import sys
 import os
 import email
+import tempfile
 import time
 
 # We're using our own minimal caching to keep dependencies to a
@@ -24,7 +25,7 @@ import time
 # Python 3.2 (precise) does not do HEAD requests via urllib.request,
 # so use http.client instead. :'(
 #
-#import urllib.request
+# import urllib.request
 import http.client
 
 __version__ = '3.8rc4'
@@ -43,6 +44,7 @@ CONFIG = {
 if sys.version_info[1] < 4:
     FileNotFoundError = IOError
 
+
 class AlertRegistry():
     """
     Tracks for which UNTs alerts have already been printed.
@@ -56,7 +58,7 @@ class AlertRegistry():
         try:
             with open(storage_file, 'rb+') as f:
                 self.registry = pickle.load(f)
-        except FileNotFoundError as e:
+        except FileNotFoundError:
             self.registry = []
             self.save()
 
@@ -69,6 +71,7 @@ class AlertRegistry():
     def save(self):
         with open(self.storage_file, 'wb') as f:
             pickle.dump(self.registry, f)
+
 
 def database_file():
     """
@@ -90,21 +93,19 @@ def database_file():
         connection = HTTPConnection(host, timeout=10)
         connection.request('GET', url)
         response = connection.getresponse()
-        f = open(tempfile, 'wb+')
-        f.write(response.read())
-        f.seek(0, 0)
-        return f
+        t = tempfile.TemporaryFile()
+        t.write(response.read())
+        t.seek(0, 0)
+        return t
 
     # HEAD request; the ETag value is the primary source for caching,
     # falling back on Last-Modified.  That is probably not HTTP-compliant
     # but, like, whatevs.
     connection = HTTPConnection(host, timeout=10)
     response = connection.request('HEAD', url,
-        headers={ 'User-Agent': 'unt-scan.py {}'.format(__version__) })
+                                  headers={'User-Agent': 'unt-scan.py {}'.format(__version__)})
     response = connection.getresponse()
     connection.close()
-
-    metadata = []
 
     if response.status != 200:
         raise Exception('Unexpected response while doing HEAD request on {}'.format(url))
@@ -120,7 +121,7 @@ def database_file():
         f = open(os.path.join(CONFIG['DIRECTORY'], 'db.metadata.pickle'), 'rb+')
         old_headers = pickle.load(f)
         f.seek(0, 0)
-    except FileNotFoundError as e:
+    except FileNotFoundError:
         f = open(os.path.join(CONFIG['DIRECTORY'], 'db.metadata.pickle'), 'wb+')
         old_headers = {}
 
@@ -140,13 +141,13 @@ def database_file():
     if not update:
         try:
             response = open(os.path.join(CONFIG['DIRECTORY'], 'db.pickle'), 'rb')
-        except:
+        except Exception:
             update = True
 
     if update:
         connection = HTTPConnection(host, timeout=10)
         response = connection.request('GET', url,
-            headers={ 'User-Agent': 'unt-scan.py {}'.format(__version__) })
+                                      headers={'User-Agent': 'unt-scan.py {}'.format(__version__)})
         response = connection.getresponse()
 
         # This is more likely to raise one of the http.client exceptions, but just check
@@ -163,6 +164,7 @@ def database_file():
         connection.close()
 
     return response
+
 
 def filter_db(db, release_codename):
     """
@@ -190,42 +192,46 @@ def filter_db(db, release_codename):
                     'cves': content['cves'],
                 }
 
+
 def get_codename():
     with open('/etc/lsb-release', 'r') as f:
         for line in f.readlines():
             if line.startswith('DISTRIB_CODENAME='):
                 return line.split('=')[1].rstrip()
 
+
 def show_age():
     try:
         with open(os.path.join(CONFIG['DIRECTORY'], 'db.metadata.pickle'), 'rb') as f:
             headers = pickle.load(f)
-    
+
         if 'Last-Modified' in headers:
             # Python 3.2 does not have parsedate_to_datetime
             age = email.utils.parsedate(headers['Last-Modified'])
 
             print('{:.0f}'.format(time.time() - time.mktime(age)))
-    except:
+    except Exception:
         print('0')
+
 
 def show_help():
     print("unt-scan.py version {1}\n"
-        "Usage: {0} [-ha] [-d DIRECTORY]\n"
-        "\n"
-        "    -h, --help                          Show this help text.\n"
-        "    -a, --all                           Show alerts that have already been shown.\n"
-        "    -c, --codename=CODENAME             Set the Ubuntu release codename (default: {3}).\n"
-        "    -o, --once                          Show alerts only once (default).\n"
-        "    -d, --directory=DIRECTORY           Store files in DIRECTORY (default: {2}).\n"
-        "    -A, --age                           Shows the age of the database in seconds, or 0 if no cache.\n"
-        .format(sys.argv[0], __version__, CONFIG['DIRECTORY'], get_codename()))
+          "Usage: {0} [-ha] [-d DIRECTORY]\n"
+          "\n"
+          "    -h, --help                          Show this help text.\n"
+          "    -a, --all                           Show alerts that have already been shown.\n"
+          "    -c, --codename=CODENAME             Set the Ubuntu release codename (default: {3}).\n"
+          "    -o, --once                          Show alerts only once (default).\n"
+          "    -d, --directory=DIRECTORY           Store files in DIRECTORY (default: {2}).\n"
+          "    -A, --age                           Shows the age of the database in seconds, or 0 if no cache.\n"
+          .format(sys.argv[0], __version__, CONFIG['DIRECTORY'], get_codename()))
+
 
 if __name__ == '__main__':
     issues_found = False
     try:
         opts, args = getopt.getopt(sys.argv[1:], "hd:aoc:A",
-                            ["help", "directory=", "all", "once", "age"])
+                                   ["help", "directory=", "all", "once", "age"])
     except getopt.GetoptError as err:
         print(str(err))
         sys.exit(2)
@@ -250,7 +256,7 @@ if __name__ == '__main__':
     if CONFIG['ALERT_ONCE'] and not CONFIG['PERSISTENT_STORAGE']:
         raise RuntimeError('Cannot track alerts without persistent storage.')
 
-    if not 'codename' in vars():
+    if 'codename' not in vars():
         codename = get_codename()
 
     if not os.path.isdir(CONFIG['DIRECTORY']):
@@ -282,7 +288,7 @@ if __name__ == '__main__':
 
                     print('UNT: {}\n   CVEs: {}'.format(package['unt'], ', '.join(package['cves'])))
                     print('   Package: {}\n   Installed version: {}\n   Fix Version: {}'.
-                        format(package['name'], cached_package.installed.version, package['version']))
+                          format(package['name'], cached_package.installed.version, package['version']))
                     print('   Short Summary: {}'.format(package['summary']))
 
     registry.save()
