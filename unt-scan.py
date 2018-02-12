@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 #
-# unt-scan.py - 2017-01-16 - Cris van Pelt <c.vanpelt@flusso.nl>
+# unt-scan.py - 2018-01-16 - Cris van Pelt <c.vanpelt@flusso.nl>
 #
 # Collects the UNT pickle database published by the Ubuntu Security Team
 # and determines if anything needs to be upgraded.
