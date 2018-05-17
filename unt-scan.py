@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 #
-# unt-scan.py - 2018-01-16 - Cris van Pelt <c.vanpelt@flusso.nl>
+# unt-scan.py - 2018-05-17 - Cris van Pelt <c.vanpelt@flusso.nl>
 #
 # Collects the UNT pickle database published by the Ubuntu Security Team
 # and determines if anything needs to be upgraded.
@@ -16,6 +16,7 @@ import sys
 import os
 import email
 import tempfile
+import datetime
 import time
 
 # We're using our own minimal caching to keep dependencies to a
@@ -38,6 +39,7 @@ CONFIG = {
     'PICKLE_HOST': 'people.canonical.com',
     'PICKLE_URL': '/~ubuntu-security/usn/database.pickle',
     'HTTPS': True,
+    'MINIMUM_AGE': 0,  # 12 hours
 }
 
 # ¯\_(ツ)_/¯
@@ -171,8 +173,11 @@ def filter_db(db, release_codename):
     This generator filters the provided pickle database by releasename and restructures"
     the input a little bit, to make it easier to parse.
     """
+    now = time.time()
     for unt, content in db.items():
         if release_codename not in list(content['releases'].keys()):
+            continue
+        elif content['timestamp'] > (now - CONFIG['MINIMUM_AGE']):
             continue
         else:
             for package, contents in content['releases'][release_codename]['binaries'].items():
@@ -190,6 +195,7 @@ def filter_db(db, release_codename):
                     'version': contents['version'],
                     'summary': summary,
                     'cves': content['cves'],
+                    'timestamp': content['timestamp'],
                 }
 
 
@@ -218,20 +224,21 @@ def show_help():
     print("unt-scan.py version {1}\n"
           "Usage: {0} [-ha] [-d DIRECTORY]\n"
           "\n"
-          "    -h, --help                          Show this help text.\n"
-          "    -a, --all                           Show alerts that have already been shown.\n"
-          "    -c, --codename=CODENAME             Set the Ubuntu release codename (default: {3}).\n"
-          "    -o, --once                          Show alerts only once (default).\n"
-          "    -d, --directory=DIRECTORY           Store files in DIRECTORY (default: {2}).\n"
-          "    -A, --age                           Shows the age of the database in seconds, or 0 if no cache.\n"
-          .format(sys.argv[0], __version__, CONFIG['DIRECTORY'], get_codename()))
+          "    -h, --help                  Show this help text.\n"
+          "    -a, --all                   Show alerts that have already been shown.\n"
+          "    -c, --codename=CODENAME     Set the Ubuntu release codename (default: {3}).\n"
+          "    -o, --once                  Show alerts only once (default).\n"
+          "    -d, --directory=DIRECTORY   Store files in DIRECTORY (default: {2}).\n"
+          "    -A, --age                   Shows the age of the database in seconds, or 0 if no cache.\n",
+          "    -m, --minimum-age=AGE       Only show advisories older than AGE seconds. (default {4})\n" \
+          .format(sys.argv[0], __version__, CONFIG['DIRECTORY'], get_codename(), CONFIG['MINIMUM_AGE']))
 
 
 if __name__ == '__main__':
     issues_found = False
     try:
-        opts, args = getopt.getopt(sys.argv[1:], "hd:aoc:A",
-                                   ["help", "directory=", "all", "once", "age"])
+        opts, args = getopt.getopt(sys.argv[1:], "hd:aoc:m:A",
+                                   ["help", "directory=", "all", "once", "codename", "minimum-age", "age"])
     except getopt.GetoptError as err:
         print(str(err))
         sys.exit(2)
@@ -248,7 +255,9 @@ if __name__ == '__main__':
         elif o in ('-o', '--once'):
             CONFIG['ALERT_ONCE'] = True
         elif o in ('-c', '--codename='):
-            codename = args
+            codename = a
+        elif o in ('-m', '--minimum-age='):
+            CONFIG['MINIMUM_AGE'] = int(a)
         elif o in ('-A', '--age'):
             show_age()
             sys.exit(0)
@@ -287,6 +296,7 @@ if __name__ == '__main__':
                     issues_found = True
 
                     print('UNT: {}\n   CVEs: {}'.format(package['unt'], ', '.join(package['cves'])))
+                    print('   Published: {}'.format(datetime.datetime.fromtimestamp(int(package['timestamp'])).strftime('%Y-%m-%d %H:%M:%S')))
                     print('   Package: {}\n   Installed version: {}\n   Fix Version: {}'.
                           format(package['name'], cached_package.installed.version, package['version']))
                     print('   Short Summary: {}'.format(package['summary']))
