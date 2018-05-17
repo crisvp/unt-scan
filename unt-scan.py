@@ -39,7 +39,7 @@ CONFIG = {
     'PICKLE_HOST': 'people.canonical.com',
     'PICKLE_URL': '/~ubuntu-security/usn/database.pickle',
     'HTTPS': True,
-    'MINIMUM_AGE': 0,  # 12 hours
+    'MINIMUM_AGE': 0,
 }
 
 # ¯\_(ツ)_/¯
